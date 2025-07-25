@@ -1,0 +1,132 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "b35d8d9e-98ad-4a0c-b97e-8868772206c8",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "2025-07-24 14:49:04.644 \n",
+      "  \u001b[33m\u001b[1mWarning:\u001b[0m to view this Streamlit app on a browser, run it with the following\n",
+      "  command:\n",
+      "\n",
+      "    streamlit run C:\\Users\\ADMIN\\anaconda3\\Lib\\site-packages\\ipykernel_launcher.py [ARGUMENTS]\n"
+     ]
+    }
+   ],
+   "source": [
+    "import streamlit as st\n",
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import joblib\n",
+    "import shap\n",
+    "import matplotlib.pyplot as plt\n",
+    "\n",
+    "# Load model and SHAP explainer\n",
+    "model = joblib.load('stroke_model.pkl')\n",
+    "explainer = joblib.load('shap_explainer.pkl')\n",
+    "\n",
+    "st.set_page_config(layout=\"wide\")\n",
+    "st.title(\"🧠 Stroke Risk Predictor with Explainability\")\n",
+    "\n",
+    "# Sample feature input (adjust based on your model features)\n",
+    "def get_user_input():\n",
+    "    gender = st.selectbox(\"Gender\", [\"Male\", \"Female\", \"Other\"])\n",
+    "    age = st.slider(\"Age\", 0, 100, 50)\n",
+    "    hypertension = st.selectbox(\"Hypertension\", [\"No\", \"Yes\"])\n",
+    "    heart_disease = st.selectbox(\"Heart Disease\", [\"No\", \"Yes\"])\n",
+    "    ever_married = st.selectbox(\"Ever Married\", [\"No\", \"Yes\"])\n",
+    "    work_type = st.selectbox(\"Work Type\", [\"Private\", \"Self-employed\", \"Govt_job\", \"children\", \"Never_worked\"])\n",
+    "    residence_type = st.selectbox(\"Residence Type\", [\"Urban\", \"Rural\"])\n",
+    "    avg_glucose_level = st.number_input(\"Average Glucose Level\", 50.0, 300.0, 100.0)\n",
+    "    bmi = st.number_input(\"BMI\", 10.0, 60.0, 25.0)\n",
+    "    smoking_status = st.selectbox(\"Smoking Status\", [\"never smoked\", \"formerly smoked\", \"smokes\", \"Unknown\"])\n",
+    "\n",
+    "    data = {\n",
+    "        \"gender\": gender,\n",
+    "        \"age\": age,\n",
+    "        \"hypertension\": 1 if hypertension == \"Yes\" else 0,\n",
+    "        \"heart_disease\": 1 if heart_disease == \"Yes\" else 0,\n",
+    "        \"ever_married\": ever_married,\n",
+    "        \"work_type\": work_type,\n",
+    "        \"Residence_type\": residence_type,\n",
+    "        \"avg_glucose_level\": avg_glucose_level,\n",
+    "        \"bmi\": bmi,\n",
+    "        \"smoking_status\": smoking_status\n",
+    "    }\n",
+    "    return pd.DataFrame([data])\n",
+    "\n",
+    "input_df = get_user_input()\n",
+    "\n",
+    "# Prediction\n",
+    "if st.button(\"Predict\"):\n",
+    "    # Preprocess input (optional: one-hot encode or use pipeline)\n",
+    "    # input_df = pd.get_dummies(input_df)  # if you used get_dummies in training\n",
+    "    prediction = model.predict(input_df)[0]\n",
+    "    proba = model.predict_proba(input_df)[0][1]\n",
+    "\n",
+    "    st.subheader(\"📈 Prediction:\")\n",
+    "    st.write(f\"Predicted Class: {'Stroke Risk' if prediction == 1 else 'No Stroke Risk'}\")\n",
+    "    st.write(f\"Probability of Stroke: **{proba:.2%}**\")\n",
+    "\n",
+    "    # --- SHAP plots ---\n",
+    "    shap_values = explainer.shap_values(input_df)\n",
+    "    shap_vals_class1 = shap_values[:, :, 1]  # Class 1\n",
+    "\n",
+    "    st.subheader(\"🔍 SHAP Summary Plot\")\n",
+    "    fig1, ax1 = plt.subplots()\n",
+    "    shap.summary_plot(shap_vals_class1, input_df, plot_type=\"bar\", show=False)\n",
+    "    st.pyplot(fig1)\n",
+    "\n",
+    "    st.subheader(\"📊 SHAP Force Plot\")\n",
+    "    shap.initjs()\n",
+    "    st_shap = st.components.v1.html(shap.force_plot(\n",
+    "        explainer.expected_value[1], shap_vals_class1[0], input_df.iloc[0], matplotlib=False\n",
+    "    ).html(), height=300)\n",
+    "\n",
+    "    st.subheader(\"📉 SHAP Waterfall Plot\")\n",
+    "    fig2, ax2 = plt.subplots()\n",
+    "    shap.plots._waterfall.waterfall_legacy(explainer.expected_value[1], shap_vals_class1[0], input_df.iloc[0], show=False)\n",
+    "    st.pyplot(fig2)\n",
+    "\n",
+    "    st.subheader(\"⚡ SHAP Dependence Plot (age)\")\n",
+    "    fig3, ax3 = plt.subplots()\n",
+    "    shap.dependence_plot(\"age\", shap_vals_class1, input_df, show=False)\n",
+    "    st.pyplot(fig3)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "id": "be689b39-ef2b-4ae8-aa05-6beadc95c8e0",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python [conda env:base] *",
+   "language": "python",
+   "name": "conda-base-py"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
