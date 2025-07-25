@@ -1,132 +1,163 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": 1,
-   "id": "b35d8d9e-98ad-4a0c-b97e-8868772206c8",
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "2025-07-24 14:49:04.644 \n",
-      "  \u001b[33m\u001b[1mWarning:\u001b[0m to view this Streamlit app on a browser, run it with the following\n",
-      "  command:\n",
-      "\n",
-      "    streamlit run C:\\Users\\ADMIN\\anaconda3\\Lib\\site-packages\\ipykernel_launcher.py [ARGUMENTS]\n"
-     ]
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+import shap
+import matplotlib.pyplot as plt
+
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Stroke Risk Predictor",
+    page_icon="�",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# --- Helper Function for Model Loading ---
+@st.cache_resource
+def load_model_assets():
+    """
+    Loads the machine learning model, SHAP explainer, and training columns.
+    Uses Streamlit's caching to load these only once.
+    """
+    try:
+        # These files must be in the same directory as your Streamlit script
+        model = joblib.load('stroke_model.pkl')
+        explainer = joblib.load('shap_explainer.pkl')
+        # This file is crucial and should be saved during model training
+        # It contains the exact column order the model was trained on.
+        # You can create it with: joblib.dump(X_train.columns, 'training_columns.pkl')
+        train_cols = joblib.load('training_columns.pkl')
+        return model, explainer, train_cols
+    except FileNotFoundError as e:
+        st.error(
+            f"🚨 **Required file not found: `{e.filename}`.** Please make sure `stroke_model.pkl`, "
+            "`shap_explainer.pkl`, and `training_columns.pkl` are in the same directory as this script."
+        )
+        # Stop the app execution if files are missing
+        return None, None, None
+
+# --- Load Assets ---
+model, explainer, train_cols = load_model_assets()
+
+# --- Sidebar for User Input ---
+st.sidebar.header("👤 Patient Information")
+st.sidebar.info("Please provide the patient's details below to get a stroke risk prediction.")
+
+def get_user_input():
+    """
+    Collects user input from the sidebar and returns it as a pandas DataFrame.
+    """
+    gender = st.sidebar.selectbox("Gender", ["Male", "Female", "Other"])
+    age = st.sidebar.slider("Age", 1, 100, 60)
+    hypertension = st.sidebar.selectbox("History of Hypertension", ["No", "Yes"])
+    heart_disease = st.sidebar.selectbox("History of Heart Disease", ["No", "Yes"])
+    ever_married = st.sidebar.selectbox("Ever Married", ["No", "Yes"])
+    work_type = st.sidebar.selectbox("Work Type", ["Private", "Self-employed", "Govt_job", "children", "Never_worked"])
+    residence_type = st.sidebar.selectbox("Residence Type", ["Urban", "Rural"])
+    avg_glucose_level = st.sidebar.number_input("Average Glucose Level (mg/dL)", 50.0, 300.0, 105.0)
+    bmi = st.sidebar.number_input("Body Mass Index (BMI)", 10.0, 70.0, 28.0)
+    smoking_status = st.sidebar.selectbox("Smoking Status", ["never smoked", "formerly smoked", "smokes", "Unknown"])
+
+    # Create a dictionary from the user's input
+    data = {
+        "gender": gender,
+        "age": age,
+        "hypertension": 1 if hypertension == "Yes" else 0,
+        "heart_disease": 1 if heart_disease == "Yes" else 0,
+        "ever_married": ever_married,
+        "work_type": work_type,
+        "Residence_type": residence_type,
+        "avg_glucose_level": avg_glucose_level,
+        "bmi": bmi,
+        "smoking_status": smoking_status
     }
-   ],
-   "source": [
-    "import streamlit as st\n",
-    "import pandas as pd\n",
-    "import numpy as np\n",
-    "import joblib\n",
-    "import shap\n",
-    "import matplotlib.pyplot as plt\n",
-    "\n",
-    "# Load model and SHAP explainer\n",
-    "model = joblib.load('stroke_model.pkl')\n",
-    "explainer = joblib.load('shap_explainer.pkl')\n",
-    "\n",
-    "st.set_page_config(layout=\"wide\")\n",
-    "st.title(\"🧠 Stroke Risk Predictor with Explainability\")\n",
-    "\n",
-    "# Sample feature input (adjust based on your model features)\n",
-    "def get_user_input():\n",
-    "    gender = st.selectbox(\"Gender\", [\"Male\", \"Female\", \"Other\"])\n",
-    "    age = st.slider(\"Age\", 0, 100, 50)\n",
-    "    hypertension = st.selectbox(\"Hypertension\", [\"No\", \"Yes\"])\n",
-    "    heart_disease = st.selectbox(\"Heart Disease\", [\"No\", \"Yes\"])\n",
-    "    ever_married = st.selectbox(\"Ever Married\", [\"No\", \"Yes\"])\n",
-    "    work_type = st.selectbox(\"Work Type\", [\"Private\", \"Self-employed\", \"Govt_job\", \"children\", \"Never_worked\"])\n",
-    "    residence_type = st.selectbox(\"Residence Type\", [\"Urban\", \"Rural\"])\n",
-    "    avg_glucose_level = st.number_input(\"Average Glucose Level\", 50.0, 300.0, 100.0)\n",
-    "    bmi = st.number_input(\"BMI\", 10.0, 60.0, 25.0)\n",
-    "    smoking_status = st.selectbox(\"Smoking Status\", [\"never smoked\", \"formerly smoked\", \"smokes\", \"Unknown\"])\n",
-    "\n",
-    "    data = {\n",
-    "        \"gender\": gender,\n",
-    "        \"age\": age,\n",
-    "        \"hypertension\": 1 if hypertension == \"Yes\" else 0,\n",
-    "        \"heart_disease\": 1 if heart_disease == \"Yes\" else 0,\n",
-    "        \"ever_married\": ever_married,\n",
-    "        \"work_type\": work_type,\n",
-    "        \"Residence_type\": residence_type,\n",
-    "        \"avg_glucose_level\": avg_glucose_level,\n",
-    "        \"bmi\": bmi,\n",
-    "        \"smoking_status\": smoking_status\n",
-    "    }\n",
-    "    return pd.DataFrame([data])\n",
-    "\n",
-    "input_df = get_user_input()\n",
-    "\n",
-    "# Prediction\n",
-    "if st.button(\"Predict\"):\n",
-    "    # Preprocess input (optional: one-hot encode or use pipeline)\n",
-    "    # input_df = pd.get_dummies(input_df)  # if you used get_dummies in training\n",
-    "    prediction = model.predict(input_df)[0]\n",
-    "    proba = model.predict_proba(input_df)[0][1]\n",
-    "\n",
-    "    st.subheader(\"📈 Prediction:\")\n",
-    "    st.write(f\"Predicted Class: {'Stroke Risk' if prediction == 1 else 'No Stroke Risk'}\")\n",
-    "    st.write(f\"Probability of Stroke: **{proba:.2%}**\")\n",
-    "\n",
-    "    # --- SHAP plots ---\n",
-    "    shap_values = explainer.shap_values(input_df)\n",
-    "    shap_vals_class1 = shap_values[:, :, 1]  # Class 1\n",
-    "\n",
-    "    st.subheader(\"🔍 SHAP Summary Plot\")\n",
-    "    fig1, ax1 = plt.subplots()\n",
-    "    shap.summary_plot(shap_vals_class1, input_df, plot_type=\"bar\", show=False)\n",
-    "    st.pyplot(fig1)\n",
-    "\n",
-    "    st.subheader(\"📊 SHAP Force Plot\")\n",
-    "    shap.initjs()\n",
-    "    st_shap = st.components.v1.html(shap.force_plot(\n",
-    "        explainer.expected_value[1], shap_vals_class1[0], input_df.iloc[0], matplotlib=False\n",
-    "    ).html(), height=300)\n",
-    "\n",
-    "    st.subheader(\"📉 SHAP Waterfall Plot\")\n",
-    "    fig2, ax2 = plt.subplots()\n",
-    "    shap.plots._waterfall.waterfall_legacy(explainer.expected_value[1], shap_vals_class1[0], input_df.iloc[0], show=False)\n",
-    "    st.pyplot(fig2)\n",
-    "\n",
-    "    st.subheader(\"⚡ SHAP Dependence Plot (age)\")\n",
-    "    fig3, ax3 = plt.subplots()\n",
-    "    shap.dependence_plot(\"age\", shap_vals_class1, input_df, show=False)\n",
-    "    st.pyplot(fig3)\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": None,
-   "id": "be689b39-ef2b-4ae8-aa05-6beadc95c8e0",
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python [conda env:base] *",
-   "language": "python",
-   "name": "conda-base-py"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.12.4"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+    
+    # Convert the dictionary to a pandas DataFrame
+    input_df = pd.DataFrame([data])
+    return input_df
+
+# Get the user input and store it
+raw_input_df = get_user_input()
+
+def preprocess_input(df, training_columns):
+    """
+    Preprocesses the raw user input DataFrame to match the model's training data format.
+    This is the most critical step for the app to work correctly.
+    """
+    # Apply one-hot encoding to categorical features
+    processed_df = pd.get_dummies(df)
+    
+    # Reindex columns to match the training columns.
+    # - This ensures all columns the model expects are present.
+    # - `fill_value=0` sets any missing columns (from the one-hot encoding) to 0.
+    # - It also ensures the column order is identical to the training data.
+    processed_df = processed_df.reindex(columns=training_columns, fill_value=0)
+    
+    return processed_df
+
+# --- Main Page Content ---
+st.title("🧠 Stroke Risk Predictor & Explainability")
+st.write(
+    "This application uses a machine learning model to predict the likelihood of a patient having a stroke. "
+    "It also uses SHAP (SHapley Additive exPlanations) to explain the prediction."
+)
+
+st.subheader("Your Input:")
+st.dataframe(raw_input_df)
+
+# Only proceed if the model and other assets were loaded successfully
+if model and explainer and train_cols is not None:
+    # Prediction and Explanation button
+    if st.button("Analyze Stroke Risk", type="primary"):
+        
+        # Preprocess the raw input to be ready for the model
+        processed_input_df = preprocess_input(raw_input_df, train_cols)
+
+        # --- Prediction ---
+        prediction = model.predict(processed_input_df)[0]
+        proba = model.predict_proba(processed_input_df)[0][1]
+
+        st.header("📈 Prediction Result")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if prediction == 1:
+                st.metric("Prediction", "High Risk", "Risk of Stroke Detected", delta_color="inverse")
+            else:
+                st.metric("Prediction", "Low Risk", "No Significant Stroke Risk Detected", delta_color="off")
+                
+        with col2:
+            st.metric("Probability of Stroke", f"{proba:.2%}")
+
+        # --- SHAP Explanation ---
+        st.header("🔍 Explaining the Prediction")
+        st.info(
+            "The following plot explains how the model arrived at its prediction. It shows which factors "
+            "increased or decreased the predicted risk of stroke."
+        )
+        
+        # --- Waterfall Plot ---
+        st.subheader("Prediction Breakdown Waterfall Plot")
+        st.write(
+            "This plot provides a detailed breakdown, starting from the base prediction value (E[f(x)]) and showing "
+            "how each feature's contribution cumulatively builds up to the final prediction score (f(x))."
+        )
+
+        # Use the modern __call__ interface of the explainer. This is more robust.
+        # It returns a rich Explanation object that can be sliced.
+        shap_explanations = explainer(processed_input_df)
+
+        fig_waterfall, ax_waterfall = plt.subplots(figsize=(10, 6))
+
+        # The shap_explanations object has dimensions (n_samples, n_features, n_classes)
+        # We want the explanation for the first sample [0], for all features [:], for the positive class [1]
+        # This provides the 1D explanation that the waterfall plot requires.
+        shap.plots.waterfall(shap_explanations[0, :, 1], show=False)
+        
+        plt.tight_layout()
+        st.pyplot(fig_waterfall)
+
+# Add a footer
+st.markdown("---")
+st.write("Disclaimer: This is an educational tool and not a substitute for professional medical advice.")
